@@ -2,7 +2,6 @@
 
 echo " Instalar o dhcp..."
 sudo yum update
-sudo yum upgrade
 sudo dnf install -y dhcp-server
 
 #Ativar a interface enp0s8 para o dhcp usar apenas essa interface
