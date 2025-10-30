@@ -1,0 +1,169 @@
+centos 10 ncarvalho
+pass nicole.25
+
+#!/bin/bash
+
+# ==============================================================================
+# VARIÁVEIS DE CONFIGURAÇÃO (AJUSTE AQUI!)
+# ==============================================================================
+INTERFACE="ens224"                       # Interface de rede do servidor Kea
+IP_SERVER="192.168.10.10"                # IP Estático do Servidor Kea/DNS
+GATEWAY="192.168.10.1"                   # IP do Gateway
+DOMAIN_NAME="empresa.local"              # Nome de domínio a ser anunciado                                        # RESERVA ESTÁTICA (Para o Cliente Ubuntu)
+MAC_RESERVA="00:0C:29:7A:C3:CC"          # MAC Address do Cliente (OBRIGATÓRIO)
+IP_RESERVA="192.168.10.50"               # IP Fixo para o Cliente
+POOL_RANGE="192.168.10.100 - 192.168.10.199" # Pool de IPs Dinâmicos
+# ==============================================================================
+
+echo "SCRIPT DE CONFIGURAÇÃO DO KEA DHCPV4"
+echo " "
+# ==============================================================================
+# CONFIGURAÇÃO DO IP ESTÁTICO DO SERVIDOR (CORREÇÃO DE CONECTIVIDADE)
+# ==============================================================================
+echo "Configurando IP Estático ($IP_SERVER) na interface $INTERFACE..."
+
+# Instalar NetworkManager se não existir
+if ! command -v nmcli &> /dev/null; then
+    echo "Instalando NetworkManager..."
+    dnf install -y NetworkManager
+    systemctl enable --now NetworkManager
+fi
+
+# Configurar o IP estático, Gateway e DNS no Servidor
+sudo nmcli connection modify "$INTERFACE" ipv4.method manual \
+    ipv4.addresses "$IP_SERVER/24" \
+    ipv4.gateway "$GATEWAY" \
+    ipv4.dns "$IP_SERVER" \
+    connection.autoconnect yes
+
+# Reaplicar a configuração
+sudo nmcli connection up "$INTERFACE"
+echo "IP Estático aplicado e interface ativada."
+
+# ==============================================================================
+# INSTALAÇÃO DO KEA
+# ==============================================================================
+echo " "
+echo "Instalação do KEA"
+echo "Instalando o pacote Kea DHCP..."
+dnf -y install kea
+
+# ==============================================================================
+# CONFIGURAÇÃO DO KEA DHCPV4 (JSON)
+# ==============================================================================
+echo " "
+echo "Configurando o ficheiro kea-dhcp4.conf..."
+
+# Fazer cópia de segurança
+if [ -f /etc/kea/kea-dhcp4.conf ]; then
+    mv /etc/kea/kea-dhcp4.conf /etc/kea/kea-dhcp4.conf.org
+    echo "Cópia de segurança criada em /etc/kea/kea-dhcp4.conf.org"
+fi
+
+# Criar o novo ficheiro de configuração Kea DHCPv4 (JSON)
+cat << EOF > /etc/kea/kea-dhcp4.conf
+{
+"Dhcp4": {
+    "interfaces-config": {
+        "interfaces": [ "$INTERFACE" ]
+    },
+    "renew-timer": 900,
+    "rebind-timer": 1800,
+    "valid-lifetime": 3600,
+    "option-data": [
+        {
+            "name": "domain-name-servers",
+            "data": "$IP_SERVER"
+        },
+        {
+            "name": "domain-name",
+            "data": "empresa.local"
+        }
+    ],
+    "subnet4": [
+        {
+            "id": 1,
+            "subnet": "192.168.10.0/24",
+            "pools": [
+                { "pool": "$POOL_RANGE" }
+            ],
+            // RESERVA ESTÁTICA PARA O CLIENTE
+            "reservations": [
+                {
+                    "hw-address": "$MAC_RESERVA",
+                    "ip-address": "$IP_RESERVA",
+                    "hostname": "cliente-ubuntu"
+                }
+            ],
+            "option-data": [
+                {
+                    "name": "routers",
+                    "data": "$GATEWAY"
+                }
+            ]
+        }
+    ],
+    // CORREÇÃO: DATABASE DE LEASES (Permite a persistência do ficheiro dhcp4.leases)
+    "lease-database": {
+        "type": "memfile",
+        "persist": true,
+        "name": "/var/lib/kea/dhcp4.leases",
+        "lfc-interval": 3600
+    },
+    "loggers": [
+        {
+            "name": "kea-dhcp4",
+            "output-options": [
+                {
+                    "output": "/var/log/kea/kea-dhcp4.log"
+                }
+            ],
+            "severity": "INFO",
+            "debuglevel": 0
+        }
+    ]
+}
+}
+EOF
+echo "Ficheiro Kea configurado com reserva e lease-database."
+
+# ==============================================================================
+# AJUSTE DE PERMISSÕES E INÍCIO DO SERVIÇO
+# ==============================================================================
+echo " "
+echo "Ajuste de Permissões e Início do Serviço"
+
+# Permissões do ficheiro de configuração
+chown root:kea /etc/kea/kea-dhcp4.conf
+chmod 640 /etc/kea/kea-dhcp4.conf
+
+# PERMISSÕES CRÍTICAS PARA O FICHEIRO DE LEASES
+echo "Corrigindo permissões para /var/lib/kea"
+sudo chown -R kea:kea /var/lib/kea
+sudo restorecon -Rv /var/lib/kea
+
+# Habilitar e iniciar o serviço
+echo "Habilitando e iniciando o serviço kea-dhcp4..."
+systemctl enable --now kea-dhcp4
+
+# ==============================================================================
+# CONFIGURAÇÃO FIREWALL
+# ==============================================================================
+echo " "
+echo "Configuração do Firewalld"
+firewall-cmd --add-service=dhcp --permanent
+firewall-cmd --reload
+
+# ==============================================================================
+# VERIFICAÇÕES FINAIS
+# ==============================================================================
+echo " "
+echo "Verificações Finais"
+echo "Verificando status do SELinux: $(getenforce)"
+echo "Verificação de estado do serviço Kea:"
+systemctl status kea-dhcp4 | grep Active
+echo "Verificando se o Kea está a escutar na porta 67 (UDP):"
+ss -lun | grep 67
+
+echo ""
+echo "Script de configuração Kea DHCP concluído!"
