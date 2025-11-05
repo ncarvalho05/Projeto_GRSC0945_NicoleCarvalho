@@ -1,13 +1,11 @@
 #!/bin/bash
 
 # ==============================================================================
-# SCRIPT DE CONFIGURAÇÃO FINAL: CENTOS GATEWAY (NAT + HOST-ONLY)
+# SCRIPT DE CONFIGURAÇÃO FINAL: CENTOS GATEWAY (NAT + HOST-ONLY) - VERSÃO FINAL 2
 # ==============================================================================
-# CORREÇÕES:
-# 1. Variáveis sem espaços na atribuição
-# 2. Uso de 'sudo' em comandos nmcli, dnf, firewall-cmd e na verificação do Kea 
-#    para resolver o erro 'Insufficient privileges' e 'Unable to open file'.
-# 3. Processo interativo 'read -p' para facilitar a configuração.
+# AJUSTES:
+# 1. DNS_SERVER alterado para 192.168.10.10 (IP do próximo Servidor DNS/AD).
+# 2. Correção de sintaxe do Pool de IPs no Kea para evitar 'status=1/FAILURE'.
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
@@ -36,8 +34,9 @@ IP_POOL_START=${IP_POOL_START:-192.168.10.100}
 read -p "6. Fim do Pool DHCP [192.168.10.199]: " IP_POOL_END
 IP_POOL_END=${IP_POOL_END:-192.168.10.199}
 
-read -p "7. DNS Server (para clientes) [8.8.8.8]: " DNS_SERVER
-DNS_SERVER=${DNS_SERVER:-8.8.8.8}
+# ALTERAÇÃO SOLICITADA: DNS interno para o próximo servidor
+read -p "7. DNS Server (IP do seu futuro servidor) [192.168.10.10]: " DNS_SERVER
+DNS_SERVER=${DNS_SERVER:-192.168.10.10}
 
 read -p "8. Nome de Domínio [empresa.local]: " DOMAIN_NAME
 DOMAIN_NAME=${DOMAIN_NAME:-empresa.local}
@@ -50,7 +49,6 @@ echo "---------------------------------------------------------------"
 # 1. GARANTIR QUE ens160 TENHA IP (DHCP) - Internet
 # ------------------------------------------------------------------------------
 echo "1. Configurando $EXTERNAL_IF para DHCP (Internet via NAT)..."
-# TODOS OS COMANDOS NMCLI PRECISAM DE SUDO
 sudo nmcli connection down "$EXTERNAL_IF" 2>/dev/null
 sudo nmcli connection delete "$EXTERNAL_IF" 2>/dev/null
 sudo nmcli connection add type ethernet con-name "$EXTERNAL_IF-NAT" ifname "$EXTERNAL_IF"
@@ -66,7 +64,6 @@ sudo dnf -y install kea
 # 3. CONFIGURAÇÃO IP ESTÁTICO DA INTERFACE INTERNA (ens224)
 # ------------------------------------------------------------------------------
 echo "3. Configurando IP Estático na interface $INTERNAL_IF ($INTERNAL_GATEWAY)..."
-# TODOS OS COMANDOS NMCLI PRECISAM DE SUDO
 sudo nmcli connection down "$INTERNAL_IF" 2>/dev/null
 sudo nmcli connection delete "$INTERNAL_IF" 2>/dev/null
 sudo nmcli connection add type ethernet con-name "$INTERNAL_IF" ifname "$INTERNAL_IF"
@@ -98,6 +95,7 @@ sudo tee /etc/kea/kea-dhcp4.conf > /dev/null << EOF
     "valid-lifetime": 3600,
     "option-data": [
         {
+            # ALTERADO: Usa 192.168.10.10 como Servidor DNS
             "name": "domain-name-servers",
             "data": "$DNS_SERVER"
         },
@@ -115,10 +113,12 @@ sudo tee /etc/kea/kea-dhcp4.conf > /dev/null << EOF
             "id": 1,
             "subnet": "$INTERNAL_SUBNET",
             "pools": [
-                { "pool": "$IP_POOL_START - $IP_POOL_END" }
+                # CORREÇÃO DE SINTAXE MANTIDA: Sem espaços em torno do hífen
+                { "pool": "$IP_POOL_START-$IP_POOL_END" }
             ],
             "option-data": [
                 {
+                    # MANTIDO: O Gateway é o IP deste servidor (192.168.10.1)
                     "name": "routers",
                     "data": "$INTERNAL_GATEWAY"
                 }
@@ -149,12 +149,11 @@ echo "   -> Ficheiro Kea configurado."
 # 4.1. GARANTIR A PASTA DE LOG E PERMISSÕES + VERIFICAR SINTAXE
 # --------------------------------------------------------------
 echo "4.1. Verificando a configuração Kea e garantindo permissões de log..."
-# Criar a pasta de log e ajustar permissões
 sudo mkdir -p /var/log/kea
 sudo chown kea:kea /var/log/kea
 sudo chmod 770 /var/log/kea
 
-# Verificar a sintaxe do JSON (AGORA COM SUDO)
+# Verificar a sintaxe do JSON
 echo "   -> A verificar a sintaxe do JSON. Se falhar, o erro aparecerá aqui!"
 sudo /usr/sbin/kea-dhcp4 -t /etc/kea/kea-dhcp4.conf
 if [ $? -ne 0 ]; then
@@ -172,7 +171,7 @@ echo "5. Configurando Roteamento IP e Firewall NAT (Masquerading)..."
 echo "net.ipv4.ip_forward = 1" | sudo tee /etc/sysctl.d/99-ipforward.conf
 sudo sysctl -p /etc/sysctl.d/99-ipforward.conf
 
-# Configurar Firewall (Todos os comandos já tinham SUDO)
+# Configurar Firewall
 sudo firewall-cmd --zone=external --change-interface="$EXTERNAL_IF" --permanent
 sudo firewall-cmd --zone=external --add-masquerade --permanent
 sudo firewall-cmd --zone=internal --add-interface="$INTERNAL_IF" --permanent
