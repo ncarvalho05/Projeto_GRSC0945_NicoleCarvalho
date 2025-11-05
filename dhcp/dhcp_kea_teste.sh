@@ -8,14 +8,14 @@
 # ==============================================================================
 
 # VARIÁVEIS DE REDE AJUSTADAS
-EXTERNAL_IF="ens160"                # Interface de Internet
-INTERNAL_IF="ens224"                # Interface de Cliente (Host-only - Adaptador 2)
-INTERNAL_SUBNET="192.168.10.0/24"   # Sub-rede interna para clientes
-INTERNAL_GATEWAY="192.168.10.1"     # IP Estático do ens224 (Gateway para o Cliente)
-IP_POOL_START="192.168.10.100"
-IP_POOL_END="192.168.10.199"
-DNS_SERVER="8.8.8.8"                # DNS Público (para evitar problemas de resolução)
-DOMAIN_NAME="empresa.local"         # Seu nome de domínio
+EXTERNAL_IF = "ens160"                # Interface de Internet
+INTERNAL_IF = "ens224"                # Interface de Cliente Host-only - Adaptador 2
+INTERNAL_SUBNET = "192.168.10.0/24"   # Sub-rede interna para clientes
+INTERNAL_GATEWAY = "192.168.10.1"     # IP Estático do ens224 Gateway para o Cliente
+IP_POOL_START = "192.168.10.100"
+IP_POOL_END = "192.168.10.199"
+DNS_SERVER = "8.8.8.8"                # DNS Público para evitar problemas de resolução
+DOMAIN_NAME = "empresa.local"         # Seu nome de domínio
 
 # ------------------------------------------------------------------------------
 # 1. GARANTIR QUE ens160 TENHA IP (DHCP) - Internet
