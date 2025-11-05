@@ -81,59 +81,57 @@ sudo tee /etc/kea/kea-dhcp4.conf > /dev/null << EOF
 {
 "Dhcp4": {
     "interfaces-config": {
-        "interfaces": [ "$INTERNAL_IF" ]
+       "interfaces": [ "$INTERNAL_IF" ]
     },
     "expired-leases-processing": {
-        "reclaim-timer-wait-time": 10,
-        "flush-reclaimed-timer-wait-time": 25,
-        "hold-reclaimed-time": 3600,
-        "max-reclaim-leases": 100,
-        "max-reclaim-time": 250,
-        "unwarned-reclaim-cycles": 5
+      "reclaim-timer-wait-time": 10,
+      "flush-reclaimed-timer-wait-time": 25,
+      "hold-reclaimed-time": 3600,
+      "max-reclaim-leases": 100,
+      "max-reclaim-time": 250,
+      "unwarned-reclaim-cycles": 5
     },
     "renew-timer": 900,
     "rebind-timer": 1800,
     "valid-lifetime": 3600,
     "option-data": [
-        {
-            "name": "domain-name-servers",
-            "data": "$DNS_SERVER"
-        },
-        {
-            "name": "domain-name",
-            "data": "$DOMAIN_NAME"
-        },
-        {
-            "name": "domain-search",
-            "data": "$DOMAIN_NAME"
-        }
+      {
+        "name": "domain-name-servers",
+        "data": "$DNS_SERVER"
+      },
+      {
+        "name": "domain-name",
+        "data": "$DOMAIN_NAME"
+      },
+      {
+        "name": "domain-search",
+        "data": "$DOMAIN_NAME"
+      }
     ],
     "subnet4": [
-        {
-            "id": 1,
-            "subnet": "$INTERNAL_SUBNET",
-            "pools": [
-                { "pool": "$IP_POOL_START-$IP_POOL_END" }
-            ],
-            "option-data": [
-                {
-                    "name": "routers",
-                    "data": "$INTERNAL_GATEWAY"
-                }
-            ]
-        }
+      {
+        "id": 1,
+        "subnet": "$INTERNAL_SUBNET",
+        "pools": [ { "pool": "$IP_POOL_START-$IP_POOL_END" } ],
+        "option-data": [
+          {
+           "name": "routers",
+           "data": "$INTERNAL_GATEWAY"
+          }
+        ]
+      }
     ],
     "loggers": [
-        {
-            "name": "kea-dhcp4",
-            "output-options": [
-                {
-                    "output": "/var/log/kea/kea-dhcp4.log"
-                }
-            ],
-            "severity": "INFO",
-            "debuglevel": 0
-        }
+      {
+        "name": "kea-dhcp4",
+        "output-options": [
+          {
+            "output": "/var/log/kea/kea-dhcp4.log"
+          }
+        ],
+        "severity": "INFO",
+        "debuglevel": 0
+      }
     ]
 }
 EOF
