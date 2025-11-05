@@ -3,19 +3,45 @@
 # ==============================================================================
 # SCRIPT DE CONFIGURAÇÃO FINAL: CENTOS GATEWAY (NAT + HOST-ONLY)
 # ==============================================================================
-# Baseado na sua configuração de rede: ens160 (Internet/NAT) e ens224 (Cliente/Host-only).
-# Correção: Adicionada verificação de sintaxe e criação/permissões da pasta de log do Kea.
+# Este script agora solicita os valores de rede ao utilizador.
+# CORREÇÃO: Removidos os espaços nas declarações de variáveis.
 # ==============================================================================
 
-# VARIÁVEIS DE REDE AJUSTADAS
-EXTERNAL_IF = "ens160"                # Interface de Internet
-INTERNAL_IF = "ens224"                # Interface de Cliente Host-only - Adaptador 2
-INTERNAL_SUBNET = "192.168.10.0/24"   # Sub-rede interna para clientes
-INTERNAL_GATEWAY = "192.168.10.1"     # IP Estático do ens224 Gateway para o Cliente
-IP_POOL_START = "192.168.10.100"
-IP_POOL_END = "192.168.10.199"
-DNS_SERVER = "8.8.8.8"                # DNS Público para evitar problemas de resolução
-DOMAIN_NAME = "empresa.local"         # Seu nome de domínio
+# ------------------------------------------------------------------------------
+# 0. VARIÁVEIS DE REDE INTERATIVAS (read -p)
+# ------------------------------------------------------------------------------
+echo "==============================================="
+echo "CONFIGURAÇÃO DE REDE - CENTOS GATEWAY (KEa)"
+echo "==============================================="
+
+# NOTA IMPORTANTE: Removidos espaços ao redor do sinal de igual (=)
+read -p "1. Interface de Internet (NAT) [ens160]: " EXTERNAL_IF
+EXTERNAL_IF=${EXTERNAL_IF:-ens160} # Valor default
+
+read -p "2. Interface Interna (Host-only) [ens224]: " INTERNAL_IF
+INTERNAL_IF=${INTERNAL_IF:-ens224} # Valor default
+
+read -p "3. Sub-rede Interna (CIDR) [192.168.10.0/24]: " INTERNAL_SUBNET
+INTERNAL_SUBNET=${INTERNAL_SUBNET:-192.168.10.0/24}
+
+read -p "4. IP Estático (Gateway Interno) [192.168.10.1]: " INTERNAL_GATEWAY
+INTERNAL_GATEWAY=${INTERNAL_GATEWAY:-192.168.10.1}
+
+read -p "5. Início do Pool DHCP [192.168.10.100]: " IP_POOL_START
+IP_POOL_START=${IP_POOL_START:-192.168.10.100}
+
+read -p "6. Fim do Pool DHCP [192.168.10.199]: " IP_POOL_END
+IP_POOL_END=${IP_POOL_END:-192.168.10.199}
+
+read -p "7. DNS Server (para clientes) [8.8.8.8]: " DNS_SERVER
+DNS_SERVER=${DNS_SERVER:-8.8.8.8}
+
+read -p "8. Nome de Domínio [empresa.local]: " DOMAIN_NAME
+DOMAIN_NAME=${DOMAIN_NAME:-empresa.local}
+
+echo "---------------------------------------------------------------"
+echo "Configurações registadas. A iniciar a execução..."
+echo "---------------------------------------------------------------"
 
 # ------------------------------------------------------------------------------
 # 1. GARANTIR QUE ens160 TENHA IP (DHCP) - Internet
@@ -23,7 +49,8 @@ DOMAIN_NAME = "empresa.local"         # Seu nome de domínio
 echo "1. Configurando $EXTERNAL_IF para DHCP (Internet via NAT)..."
 nmcli connection down "$EXTERNAL_IF" 2>/dev/null
 nmcli connection delete "$EXTERNAL_IF" 2>/dev/null
-nmcli connection add type ethernet con-name "$EXTERNAL_IF-NAT" ifname $EXTERNAL_IF
+# Corrigido: As variáveis agora têm valor
+nmcli connection add type ethernet con-name "$EXTERNAL_IF-NAT" ifname "$EXTERNAL_IF"
 nmcli connection modify "$EXTERNAL_IF-NAT" ipv4.method auto connection.autoconnect yes
 nmcli connection up "$EXTERNAL_IF-NAT"
 
@@ -38,9 +65,9 @@ sudo dnf -y install kea
 echo "3. Configurando IP Estático na interface $INTERNAL_IF ($INTERNAL_GATEWAY)..."
 nmcli connection down "$INTERNAL_IF" 2>/dev/null
 nmcli connection delete "$INTERNAL_IF" 2>/dev/null
-nmcli connection add type ethernet con-name "$INTERNAL_IF" ifname $INTERNAL_IF
-# Atenção: Assegurar que 'connection.autoconnect yes' está correto no seu terminal, ou usar 'auto'
-nmcli connection modify "$INTERNAL_IF" ipv4.method manual ipv4.addresses $INTERNAL_GATEWAY/24 connection.autoconnect yes
+# Corrigido: As variáveis agora têm valor
+nmcli connection add type ethernet con-name "$INTERNAL_IF" ifname "$INTERNAL_IF"
+nmcli connection modify "$INTERNAL_IF" ipv4.method manual ipv4.addresses "$INTERNAL_GATEWAY/24" connection.autoconnect yes
 nmcli connection up "$INTERNAL_IF"
 
 # ------------------------------------------------------------------------------
@@ -49,14 +76,14 @@ nmcli connection up "$INTERNAL_IF"
 echo "4. Configurando o ficheiro kea-dhcp4.conf..."
 if [ -f /etc/kea/kea-dhcp4.conf ]; then sudo mv /etc/kea/kea-dhcp4.conf /etc/kea/kea-dhcp4.conf.org; fi
 
+# O ficheiro de configuração JSON depende agora das variáveis definidas pelo utilizador.
+# Se alguma estiver vazia ou mal formatada, a verificação no passo 4.1 irá capturar.
 sudo tee /etc/kea/kea-dhcp4.conf > /dev/null << EOF
 {
 "Dhcp4": {
     "interfaces-config": {
-        // Corrigido para a interface interna: ens224
         "interfaces": [ "$INTERNAL_IF" ]
     },
-    // processamento de leases expirados (mantido do seu script)
     "expired-leases-processing": {
         "reclaim-timer-wait-time": 10,
         "flush-reclaimed-timer-wait-time": 25,
@@ -65,15 +92,11 @@ sudo tee /etc/kea/kea-dhcp4.conf > /dev/null << EOF
         "max-reclaim-time": 250,
         "unwarned-reclaim-cycles": 5
     },
-    // temporizadores DHCP (mantido do seu script)
     "renew-timer": 900,
     "rebind-timer": 1800,
     "valid-lifetime": 3600,
-
-    // opções gerais (DNS e domínio corrigidos)
     "option-data": [
         {
-            // Usando DNS 8.8.8.8 para garantir acesso à internet
             "name": "domain-name-servers",
             "data": "$DNS_SERVER"
         },
@@ -86,8 +109,6 @@ sudo tee /etc/kea/kea-dhcp4.conf > /dev/null << EOF
             "data": "$DOMAIN_NAME"
         }
     ],
-
-    // definição de sub-rede e pool (Corrigidos para 192.168.10.x)
     "subnet4": [
         {
             "id": 1,
@@ -97,15 +118,12 @@ sudo tee /etc/kea/kea-dhcp4.conf > /dev/null << EOF
             ],
             "option-data": [
                 {
-                    // Gateway corrigido para o IP estático do CentOS: 192.168.10.1
                     "name": "routers",
                     "data": "$INTERNAL_GATEWAY"
                 }
             ]
         }
     ],
-
-    // configuração de logs (mantido do seu script)
     "loggers": [
         {
             "name": "kea-dhcp4",
@@ -128,21 +146,21 @@ sudo chown root:kea /etc/kea/kea-dhcp4.conf
 sudo chmod 640 /etc/kea/kea-dhcp4.conf
 echo "   -> Ficheiro Kea configurado."
 
-# --- NOVO PASSO DE CORREÇÃO ---
+# --------------------------------------------------------------
 # 4.1. GARANTIR A PASTA DE LOG E PERMISSÕES + VERIFICAR SINTAXE
 # --------------------------------------------------------------
 echo "4.1. Verificando a configuração Kea e garantindo permissões de log..."
 # 1. Criar a pasta de log (se não existir) e dar permissão ao grupo 'kea'
 sudo mkdir -p /var/log/kea
 sudo chown kea:kea /var/log/kea
-sudo chmod 770 /var/log/kea # Permite a escrita do Kea
+sudo chmod 770 /var/log/kea
 
-# 2. Verificar a sintaxe do JSON (Isto deve indicar o erro 'status=1/FAILURE')
+# 2. Verificar a sintaxe do JSON.
 echo "   -> A verificar a sintaxe do JSON. Se falhar, é erro no ficheiro!"
 /usr/sbin/kea-dhcp4 -t /etc/kea/kea-dhcp4.conf
 if [ $? -ne 0 ]; then
     echo "   !!! ERRO FATAL DE SINTAXE NO FICHEIRO DE CONFIGURAÇÃO KEA !!!"
-    echo "   O serviço VAI FALHAR. Corrija /etc/kea/kea-dhcp4.conf e tente novamente."
+    echo "   O serviço VAI FALHAR. Verifique o output acima para detalhes."
     exit 1
 fi
 echo "   -> Sintaxe do Kea OK."
@@ -156,9 +174,9 @@ echo "net.ipv4.ip_forward = 1" | sudo tee /etc/sysctl.d/99-ipforward.conf
 sudo sysctl -p /etc/sysctl.d/99-ipforward.conf
 
 # Configurar Firewall (Adicionar DHCP à zona interna e Masquerading à externa)
-sudo firewall-cmd --zone=external --change-interface=$EXTERNAL_IF --permanent
+sudo firewall-cmd --zone=external --change-interface="$EXTERNAL_IF" --permanent
 sudo firewall-cmd --zone=external --add-masquerade --permanent
-sudo firewall-cmd --zone=internal --add-interface=$INTERNAL_IF --permanent
+sudo firewall-cmd --zone=internal --add-interface="$INTERNAL_IF" --permanent
 sudo firewall-cmd --add-service=dhcp --zone=internal --permanent
 sudo firewall-cmd --reload
 echo "   -> Roteamento e regras de Firewall ativados."
