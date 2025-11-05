@@ -3,8 +3,11 @@
 # ==============================================================================
 # SCRIPT DE CONFIGURAÇÃO FINAL: CENTOS GATEWAY (NAT + HOST-ONLY)
 # ==============================================================================
-# Este script agora solicita os valores de rede ao utilizador.
-# CORREÇÃO: Removidos os espaços nas declarações de variáveis.
+# CORREÇÕES:
+# 1. Variáveis sem espaços na atribuição
+# 2. Uso de 'sudo' em comandos nmcli, dnf, firewall-cmd e na verificação do Kea 
+#    para resolver o erro 'Insufficient privileges' e 'Unable to open file'.
+# 3. Processo interativo 'read -p' para facilitar a configuração.
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
@@ -14,12 +17,12 @@ echo "==============================================="
 echo "CONFIGURAÇÃO DE REDE - CENTOS GATEWAY (KEa)"
 echo "==============================================="
 
-# NOTA IMPORTANTE: Removidos espaços ao redor do sinal de igual (=)
+# Solicitações de entrada com valores default
 read -p "1. Interface de Internet (NAT) [ens160]: " EXTERNAL_IF
-EXTERNAL_IF=${EXTERNAL_IF:-ens160} # Valor default
+EXTERNAL_IF=${EXTERNAL_IF:-ens160}
 
 read -p "2. Interface Interna (Host-only) [ens224]: " INTERNAL_IF
-INTERNAL_IF=${INTERNAL_IF:-ens224} # Valor default
+INTERNAL_IF=${INTERNAL_IF:-ens224}
 
 read -p "3. Sub-rede Interna (CIDR) [192.168.10.0/24]: " INTERNAL_SUBNET
 INTERNAL_SUBNET=${INTERNAL_SUBNET:-192.168.10.0/24}
@@ -47,12 +50,12 @@ echo "---------------------------------------------------------------"
 # 1. GARANTIR QUE ens160 TENHA IP (DHCP) - Internet
 # ------------------------------------------------------------------------------
 echo "1. Configurando $EXTERNAL_IF para DHCP (Internet via NAT)..."
-nmcli connection down "$EXTERNAL_IF" 2>/dev/null
-nmcli connection delete "$EXTERNAL_IF" 2>/dev/null
-# Corrigido: As variáveis agora têm valor
-nmcli connection add type ethernet con-name "$EXTERNAL_IF-NAT" ifname "$EXTERNAL_IF"
-nmcli connection modify "$EXTERNAL_IF-NAT" ipv4.method auto connection.autoconnect yes
-nmcli connection up "$EXTERNAL_IF-NAT"
+# TODOS OS COMANDOS NMCLI PRECISAM DE SUDO
+sudo nmcli connection down "$EXTERNAL_IF" 2>/dev/null
+sudo nmcli connection delete "$EXTERNAL_IF" 2>/dev/null
+sudo nmcli connection add type ethernet con-name "$EXTERNAL_IF-NAT" ifname "$EXTERNAL_IF"
+sudo nmcli connection modify "$EXTERNAL_IF-NAT" ipv4.method auto connection.autoconnect yes
+sudo nmcli connection up "$EXTERNAL_IF-NAT"
 
 # ------------------------------------------------------------------------------
 # 2. INSTALAR KEA DHCP
@@ -63,12 +66,12 @@ sudo dnf -y install kea
 # 3. CONFIGURAÇÃO IP ESTÁTICO DA INTERFACE INTERNA (ens224)
 # ------------------------------------------------------------------------------
 echo "3. Configurando IP Estático na interface $INTERNAL_IF ($INTERNAL_GATEWAY)..."
-nmcli connection down "$INTERNAL_IF" 2>/dev/null
-nmcli connection delete "$INTERNAL_IF" 2>/dev/null
-# Corrigido: As variáveis agora têm valor
-nmcli connection add type ethernet con-name "$INTERNAL_IF" ifname "$INTERNAL_IF"
-nmcli connection modify "$INTERNAL_IF" ipv4.method manual ipv4.addresses "$INTERNAL_GATEWAY/24" connection.autoconnect yes
-nmcli connection up "$INTERNAL_IF"
+# TODOS OS COMANDOS NMCLI PRECISAM DE SUDO
+sudo nmcli connection down "$INTERNAL_IF" 2>/dev/null
+sudo nmcli connection delete "$INTERNAL_IF" 2>/dev/null
+sudo nmcli connection add type ethernet con-name "$INTERNAL_IF" ifname "$INTERNAL_IF"
+sudo nmcli connection modify "$INTERNAL_IF" ipv4.method manual ipv4.addresses "$INTERNAL_GATEWAY/24" connection.autoconnect yes
+sudo nmcli connection up "$INTERNAL_IF"
 
 # ------------------------------------------------------------------------------
 # 4. CONFIGURAÇÃO DHCP (KEA) - Usando a sua estrutura JSON
@@ -76,8 +79,6 @@ nmcli connection up "$INTERNAL_IF"
 echo "4. Configurando o ficheiro kea-dhcp4.conf..."
 if [ -f /etc/kea/kea-dhcp4.conf ]; then sudo mv /etc/kea/kea-dhcp4.conf /etc/kea/kea-dhcp4.conf.org; fi
 
-# O ficheiro de configuração JSON depende agora das variáveis definidas pelo utilizador.
-# Se alguma estiver vazia ou mal formatada, a verificação no passo 4.1 irá capturar.
 sudo tee /etc/kea/kea-dhcp4.conf > /dev/null << EOF
 {
 "Dhcp4": {
@@ -137,10 +138,8 @@ sudo tee /etc/kea/kea-dhcp4.conf > /dev/null << EOF
         }
     ]
 }
-}
 EOF
 
-# Ajustar permissões e propriedade
 echo "   -> Ajustando permissões e propriedade do ficheiro de configuração..."
 sudo chown root:kea /etc/kea/kea-dhcp4.conf
 sudo chmod 640 /etc/kea/kea-dhcp4.conf
@@ -150,17 +149,17 @@ echo "   -> Ficheiro Kea configurado."
 # 4.1. GARANTIR A PASTA DE LOG E PERMISSÕES + VERIFICAR SINTAXE
 # --------------------------------------------------------------
 echo "4.1. Verificando a configuração Kea e garantindo permissões de log..."
-# 1. Criar a pasta de log (se não existir) e dar permissão ao grupo 'kea'
+# Criar a pasta de log e ajustar permissões
 sudo mkdir -p /var/log/kea
 sudo chown kea:kea /var/log/kea
 sudo chmod 770 /var/log/kea
 
-# 2. Verificar a sintaxe do JSON.
-echo "   -> A verificar a sintaxe do JSON. Se falhar, é erro no ficheiro!"
-/usr/sbin/kea-dhcp4 -t /etc/kea/kea-dhcp4.conf
+# Verificar a sintaxe do JSON (AGORA COM SUDO)
+echo "   -> A verificar a sintaxe do JSON. Se falhar, o erro aparecerá aqui!"
+sudo /usr/sbin/kea-dhcp4 -t /etc/kea/kea-dhcp4.conf
 if [ $? -ne 0 ]; then
     echo "   !!! ERRO FATAL DE SINTAXE NO FICHEIRO DE CONFIGURAÇÃO KEA !!!"
-    echo "   O serviço VAI FALHAR. Verifique o output acima para detalhes."
+    echo "   VERIFIQUE O OUTPUT IMEDIATAMENTE ACIMA."
     exit 1
 fi
 echo "   -> Sintaxe do Kea OK."
@@ -173,7 +172,7 @@ echo "5. Configurando Roteamento IP e Firewall NAT (Masquerading)..."
 echo "net.ipv4.ip_forward = 1" | sudo tee /etc/sysctl.d/99-ipforward.conf
 sudo sysctl -p /etc/sysctl.d/99-ipforward.conf
 
-# Configurar Firewall (Adicionar DHCP à zona interna e Masquerading à externa)
+# Configurar Firewall (Todos os comandos já tinham SUDO)
 sudo firewall-cmd --zone=external --change-interface="$EXTERNAL_IF" --permanent
 sudo firewall-cmd --zone=external --add-masquerade --permanent
 sudo firewall-cmd --zone=internal --add-interface="$INTERNAL_IF" --permanent
