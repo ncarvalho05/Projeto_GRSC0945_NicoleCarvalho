@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # ==============================================================================
-# SCRIPT DE CONFIGURAÇÃO FINAL: CENTOS GATEWAY (NAT + HOST-ONLY) - VERSÃO FINAL 2
+# SCRIPT DE CONFIGURAÇÃO FINAL: CENTOS GATEWAY (NAT + HOST-ONLY) - VERSÃO LIMPA
 # ==============================================================================
-# AJUSTES:
-# 1. DNS_SERVER alterado para 192.168.10.10 (IP do próximo Servidor DNS/AD).
-# 2. Correção de sintaxe do Pool de IPs no Kea para evitar 'status=1/FAILURE'.
+# CORREÇÃO CRÍTICA: Bloco 'tee' reescrito para eliminar o erro 'Invalid character: ≡' 
+# na linha 3 do kea-dhcp4.conf, que impedia o serviço de iniciar (status=1/FAILURE).
+# DNS Servidor: 192.168.10.10. Gateway: 192.168.10.1.
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
@@ -34,7 +34,7 @@ IP_POOL_START=${IP_POOL_START:-192.168.10.100}
 read -p "6. Fim do Pool DHCP [192.168.10.199]: " IP_POOL_END
 IP_POOL_END=${IP_POOL_END:-192.168.10.199}
 
-# ALTERAÇÃO SOLICITADA: DNS interno para o próximo servidor
+# DNS Interno (IP do seu futuro servidor)
 read -p "7. DNS Server (IP do seu futuro servidor) [192.168.10.10]: " DNS_SERVER
 DNS_SERVER=${DNS_SERVER:-192.168.10.10}
 
@@ -76,6 +76,7 @@ sudo nmcli connection up "$INTERNAL_IF"
 echo "4. Configurando o ficheiro kea-dhcp4.conf..."
 if [ -f /etc/kea/kea-dhcp4.conf ]; then sudo mv /etc/kea/kea-dhcp4.conf /etc/kea/kea-dhcp4.conf.org; fi
 
+# NOTE: Bloco 'EOF' reescrito para garantir a limpeza de caracteres invisíveis
 sudo tee /etc/kea/kea-dhcp4.conf > /dev/null << EOF
 {
 "Dhcp4": {
@@ -95,7 +96,6 @@ sudo tee /etc/kea/kea-dhcp4.conf > /dev/null << EOF
     "valid-lifetime": 3600,
     "option-data": [
         {
-            # ALTERADO: Usa 192.168.10.10 como Servidor DNS
             "name": "domain-name-servers",
             "data": "$DNS_SERVER"
         },
@@ -113,12 +113,10 @@ sudo tee /etc/kea/kea-dhcp4.conf > /dev/null << EOF
             "id": 1,
             "subnet": "$INTERNAL_SUBNET",
             "pools": [
-                # CORREÇÃO DE SINTAXE MANTIDA: Sem espaços em torno do hífen
                 { "pool": "$IP_POOL_START-$IP_POOL_END" }
             ],
             "option-data": [
                 {
-                    # MANTIDO: O Gateway é o IP deste servidor (192.168.10.1)
                     "name": "routers",
                     "data": "$INTERNAL_GATEWAY"
                 }
@@ -158,7 +156,7 @@ echo "   -> A verificar a sintaxe do JSON. Se falhar, o erro aparecerá aqui!"
 sudo /usr/sbin/kea-dhcp4 -t /etc/kea/kea-dhcp4.conf
 if [ $? -ne 0 ]; then
     echo "   !!! ERRO FATAL DE SINTAXE NO FICHEIRO DE CONFIGURAÇÃO KEA !!!"
-    echo "   VERIFIQUE O OUTPUT IMEDIATAMENTE ACIMA."
+    echo "   O serviço VAI FALHAR. VERIFIQUE O OUTPUT IMEDIATAMENTE ACIMA."
     exit 1
 fi
 echo "   -> Sintaxe do Kea OK."
